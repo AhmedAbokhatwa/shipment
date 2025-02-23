@@ -64,6 +64,41 @@ def make_purchase_order_shipment(source_name, target_doc=None):
     return doc
 
 @frappe.whitelist()
+def get_shipment_qty_for_pr(po_number):
+    sql = """
+        SELECT 
+            SUM(custom_add) AS custom_shipment_qty,
+            po_number AS po,
+            item_code
+        FROM
+            `tabShipment Order Details`
+        WHERE 
+            po_number = %s
+        GROUP BY item_code
+    """
+    data = frappe.db.sql(sql, po_number, as_dict=True)
+
+    for po in data:
+        po_doc = frappe.get_doc('Purchase Order', po.po)
+        po_doc.flags.ignore_validate_update_after_submit = True
+        po_doc.flags.ignore_validate = True
+        po_doc.flags.ignore_mandatory = True
+
+        item_found = False
+        for r in po_doc.items:
+            if r.item_code == po.item_code:
+                r.custom_shipment_qty = po.custom_shipment_qty  
+                item_found = True
+                break
+
+        if item_found:
+            po_doc.save()
+            frappe.db.commit()
+            frappe.msgprint(f"{po_doc.name} is updated with custom shipment qty {po.custom_shipment_qty} for item {po.item_code}")
+        else:
+            frappe.msgprint(f"No item with item code {po.item_code} found in Purchase Order {po_doc.name}")
+
+
 def get_shipment_qty_for_po(po_number):
     sql = """
         SELECT 
